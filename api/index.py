@@ -10,8 +10,10 @@ BOT_TOKEN = "8906894460:AAELYRJloheu02bcFaumNuGx6E9ngbgFDkU"
 ADMIN_ID = 6071687483
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# قائمة المستخدمين المشتركين في VIP (في الذاكرة)
-vip_users = set()
+# المجموعات في الذاكرة
+vip_users = set()         # أرقام المشتركين
+referrals = {}          # {user_id: count} عدد المقيدين عن طريق المستخدم
+user_inviter = {}       # {new_user_id: inviter_id} لمنع التكرار
 
 def poisson(k, mean):
     return (math.pow(mean, k) * math.exp(-mean)) / math.factorial(k)
@@ -99,22 +101,20 @@ def send_stars_invoice(chat_id):
         "title": "اشتراك VIP - بوت التوقعات",
         "description": "احصل على جميع توقعات ومباريات اليوم كاملة بدون قيود لمدة شهر كامل!",
         "payload": "vip_subscription_payload",
-        "currency": "XTR",  # رمز نجوم تلغرام
-        "prices": [{"label": "اشتراك شهر VIP", "amount": 50}] # 50 نجمة
+        "currency": "XTR",
+        "prices": [{"label": "اشتراك شهر VIP", "amount": 50}]
     }
     requests.post(f"{TELEGRAM_API}/sendInvoice", json=payload)
 
 def answer_pre_checkout_query(pre_checkout_query_id):
-    payload = {
-        "pre_checkout_query_id": pre_checkout_query_id,
-        "ok": True
-    }
+    payload = {"pre_checkout_query_id": pre_checkout_query_id, "ok": True}
     requests.post(f"{TELEGRAM_API}/answerPreCheckoutQuery", json=payload)
 
 def get_main_keyboard():
     return {
         "inline_keyboard": [
             [{"text": "📅 مباريات اليوم", "callback_data": "cmd_today"}, {"text": "⭐ اشتراك VIP (50 نجمة)", "callback_data": "cmd_vip"}],
+            [{"text": "🎁 اشتراك VIP مجاني (رابط الدعوة)", "callback_data": "cmd_invite"}],
             [{"text": "❓ طريقة الاستخدام", "callback_data": "cmd_help"}]
         ]
     }
@@ -124,13 +124,11 @@ def webhook():
     if request.method == "POST":
         data = request.get_json()
 
-        # التعامل مع تأكيد الشراء قبل الدفع (PreCheckoutQuery)
         if "pre_checkout_query" in data:
             query_id = data["pre_checkout_query"]["id"]
             answer_pre_checkout_query(query_id)
             return jsonify({"status": "success"}), 200
 
-        # التعامل مع الدفع الناجح (Successful Payment)
         if "message" in data and "successful_payment" in data["message"]:
             chat_id = data["message"]["chat"]["id"]
             vip_users.add(chat_id)
@@ -143,7 +141,28 @@ def webhook():
             text = data["message"].get("text", "").strip()
             is_vip = chat_id in vip_users or chat_id == ADMIN_ID
 
-            if text == "/start":
+            # معالجة نظام الإحالة عند الضغط على رابط دعوة
+            if text.startswith("/start"):
+                parts = text.split()
+                if len(parts) > 1:
+                    inviter_id = parts[1]
+                    try:
+                        inviter_id = int(inviter_id)
+                        if inviter_id != chat_id and chat_id not in user_inviter:
+                            user_inviter[chat_id] = inviter_id
+                            referrals[inviter_id] = referrals.get(inviter_id, 0) + 1
+                            count = referrals[inviter_id]
+                            
+                            # إشعار الداعي
+                            send_telegram_message(inviter_id, f"🎉 **انضم شخص جديد عبر رابطك!**\nعددهم الحالي: `{count}/10` شخص.")
+                            
+                            # الوصول للحد المطلوب (10 أشخاص)
+                            if count >= 10 and inviter_id not in vip_users:
+                                vip_users.add(inviter_id)
+                                send_telegram_message(inviter_id, "🥳 **مبروك! قمت بدعوة 10 أشخاص بنجاح.**\nتم تفعيل اشتراك **VIP** المجاني لمدة شهر!")
+                    except ValueError:
+                        pass
+
                 msg = "مرحباً بك في **بوت التوقعات الرياضية السحابي** ⚽\n\nاضغط الأزرار بالأسفل لتصفح الخدمات:"
                 send_telegram_message(chat_id, msg, get_main_keyboard())
             elif text == "/today":
@@ -171,6 +190,17 @@ def webhook():
                 handle_today_matches(chat_id, is_vip=is_vip)
             elif cb_data == "cmd_vip":
                 send_stars_invoice(chat_id)
+            elif cb_data == "cmd_invite":
+                bot_username = "VIP_Predictions_Bot" # اسم مستخدم البوت
+                ref_link = f"https://t.me/bot8906894460_bot?start={chat_id}"
+                my_count = referrals.get(chat_id, 0)
+                msg = (
+                    f"🎁 **برنامج الدعوة للحصول على VIP مجاناً:**\n\n"
+                    f"قم بنشر الرابط الخاص بك، وعند انضمام **10 أشخاص** سيتفعل معك حساب VIP لمدة شهر تلقائياً!\n\n"
+                    f"🔗 **رابطك الخاص:**\n`https://t.me/bot8906894460_bot?start={chat_id}`\n\n"
+                    f"👥 **عدد الذين دعوتهم:** `{my_count}/10` شخص"
+                )
+                send_telegram_message(chat_id, msg, get_main_keyboard())
             elif cb_data == "cmd_help":
                 send_telegram_message(chat_id, "💡 اكتب اسم أي فريق مباشرة لتحليله فوراً!")
         return jsonify({"status": "success"}), 200
@@ -193,7 +223,7 @@ def handle_today_matches(chat_id, is_vip=False):
             f"🎯 **الترجيح:** {res['pred']}\n------------------------------\n"
         )
     if not is_vip and len(matches) > 3:
-        response += "\n🔒 باقي المباريات مغلقة! اشترك في VIP بـ 50 نجمة لفتح جميع المباريات."
+        response += "\n🔒 باقي المباريات مغلقة! اشترك في VIP أو ادعُ 10 أصدقاء لفتحها مجاناً."
     send_telegram_message(chat_id, response, get_main_keyboard())
 
 if __name__ == "__main__":
