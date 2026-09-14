@@ -204,11 +204,26 @@ def webhook():
                 msg = "مرحباً بك في **بوت التوقعات الرياضية السحابي** ⚽\n\nاضغط الأزرار بالأسفل لتصفح الخدمات:"
                 send_telegram_message(chat_id, msg, get_main_keyboard())
 
-            elif text == "/admin":
-                if chat_id == ADMIN_ID:
-                    msg = f"⚙️ **لوحة التحكم الأدمن:**\n\n• عدد مشتركي VIP الحاليين: `{len(vip_users)}`\n• عدد المدعوين المسجلين: `{len(user_inviter)}`"
-                else:
-                    msg = "⚠️ هذه اللوحة مخصصة لمدير البوت فقط."
+            elif text.startswith("/admin") and chat_id == ADMIN_ID:
+                msg = f"⚙️ **لوحة الأدمن الاحترافية:**\n\n• عدد مشتركين VIP: `{len(vip_users)}`\n• عدد المسجلين بالدعوات: `{len(user_inviter)}`\n\n🔧 **أوامر التحكم السريعة:**\n• `/addvip 123456` : لتفعيل VIP لشخص مجاناً\n• `/delvip 123456` : لإلغاء VIP عن شخص"
+                send_telegram_message(chat_id, msg, get_main_keyboard())
+
+            elif text.startswith("/addvip") and chat_id == ADMIN_ID:
+                try:
+                    target_id = int(text.split()[1])
+                    vip_users.add(target_id)
+                    msg = f"✅ تم تفعيل VIP للمستخدم: `{target_id}` بنجاح!"
+                except:
+                    msg = "❌ خطأ! اكتب الأمر هكذا: `/addvip 12345678`"
+                send_telegram_message(chat_id, msg, get_main_keyboard())
+
+            elif text.startswith("/delvip") and chat_id == ADMIN_ID:
+                try:
+                    target_id = int(text.split()[1])
+                    vip_users.discard(target_id)
+                    msg = f"🗑️ تم إلغاء VIP عن المستخدم: `{target_id}`"
+                except:
+                    msg = "❌ خطأ! اكتب الأمر هكذا: `/delvip 12345678`"
                 send_telegram_message(chat_id, msg, get_main_keyboard())
 
             elif text == "/today":
