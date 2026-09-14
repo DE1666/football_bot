@@ -1,6 +1,5 @@
 import math
 import requests
-import datetime
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -11,6 +10,7 @@ ADMIN_ID = 6071687483
 CHANNEL_USERNAME = "@freebetvipi"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# تخزين مؤقت داخل الذاكرة
 vip_users = set()
 referrals = {}
 user_inviter = {}
@@ -205,12 +205,16 @@ def webhook():
                 send_telegram_message(chat_id, msg, get_main_keyboard())
 
             elif text == "/admin":
-                msg = f"⚙️ **لوحة التحكم الأدمن:**\n\n• عدد مشتركي VIP: `{len(vip_users)}`\n• عدد المستدعين: `{len(user_inviter)}`"
+                if chat_id == ADMIN_ID:
+                    msg = f"⚙️ **لوحة التحكم الأدمن:**\n\n• عدد مشتركي VIP الحاليين: `{len(vip_users)}`\n• عدد المدعوين المسجلين: `{len(user_inviter)}`"
+                else:
+                    msg = "⚠️ هذه اللوحة مخصصة لمدير البوت فقط."
                 send_telegram_message(chat_id, msg, get_main_keyboard())
 
             elif text == "/today":
                 handle_today_matches(chat_id, is_vip=is_vip)
 
+            # للبحث عن المباريات: يمنع التحليل الوهمي إذا بدأت الرسالة بـ /
             elif text and not text.startswith("/"):
                 match_data = search_team_match(text)
                 if match_data:
