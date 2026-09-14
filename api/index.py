@@ -299,6 +299,19 @@ def webhook():
                     msg = "❌ **خطأ!** أرسل الأمر هكذا:\n`/delvip 12345678`"
                 send_telegram_message(chat_id, msg, get_admin_keyboard())
 
+                        elif text.startswith("/report"):
+                report_text = text.replace("/report", "").strip()
+                if not report_text:
+                    send_telegram_message(chat_id, "⚠️ **طريقة الإبلاغ عن مشكلة:**\nأرسل الأمر متبوعاً بمشكلتك، مثال:\n`/report البوت لا يظهر المباريات`", get_main_keyboard())
+                else:
+                    # إرسال البلاغ للأدمن
+                    admin_msg = f"🚨 **بلاغ جديد عن مشكلة!**\n\n👤 **من المستخدم:** `{chat_id}`\n📝 **تفاصيل المشكلة:**\n{report_text}"
+                    send_telegram_message(ADMIN_ID, admin_msg)
+                    
+                    # تأكيد للمستخدم
+                    send_telegram_message(chat_id, "✅ **تم إرسال بلاغك للإدارة بنجاح!**\nشكراً لك، سنعمل على حل المشكلة في أسرع وقت.", get_main_keyboard())
+                return jsonify({"status": "success"}), 200
+
             elif text == "/today":
                 handle_today_matches(chat_id, is_vip=is_vip)
 
