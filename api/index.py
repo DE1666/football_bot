@@ -207,19 +207,14 @@ def webhook():
             elif text.startswith("/admin") and chat_id == ADMIN_ID:
                 admin_kb = {
                     "inline_keyboard": [
-                        [{"text": "📊 الإحصائيات الشاملة", "callback_data": "admin_stats"}, {"text": "➕ تفعيل VIP يدوي", "callback_data": "admin_addvip"}],
-                        [{"text": "❌ إلغاء VIP يدوي", "callback_data": "admin_delvip"}, {"text": "📢 إذاعة عامة للجميع", "callback_data": "admin_broadcast"}],
-                        [{"text": "🔙 إغلاق اللوحة", "callback_data": "admin_close"}]
+                        [{"text": "📊 الإحصائيات", "callback_data": "admin_stats"}, {"text": "➕ تفعيل VIP", "callback_data": "admin_addvip"}],
+                        [{"text": "❌ إلغاء VIP", "callback_data": "admin_delvip"}, {"text": "📢 إذاعة للكل", "callback_data": "admin_broadcast"}],
+                        [{"text": "🗑️ إغلاق اللوحة", "callback_data": "admin_close"}]
                     ]
                 }
-                msg = "👑 **أهلاً بك في لوحة تحكم الأدمن الخاصة:**
-
-إليك خيارات التحكم السريعة بالنقر على الأزرار أدناه:"
+                msg = "👑 **أهلاً بك في لوحة تحكم الأدمن الخاصة:**\n\nإليك أزرار التحكم السريعة:"
                 send_telegram_message(chat_id, msg, admin_kb)
                 return jsonify({"status": "success"}), 200
-                msg = f"⚙️ **لوحة الأدمن الاحترافية:**\n\n• عدد مشتركين VIP: `{len(vip_users)}`\n• عدد المسجلين بالدعوات: `{len(user_inviter)}`\n\n🔧 **أوامر التحكم السريعة:**\n• `/addvip 123456` : لتفعيل VIP لشخص مجاناً\n• `/delvip 123456` : لإلغاء VIP عن شخص"
-                send_telegram_message(chat_id, msg, get_main_keyboard())
-
             elif text.startswith("/addvip") and chat_id == ADMIN_ID:
                 try:
                     target_id = int(text.split()[1])
