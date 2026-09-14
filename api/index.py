@@ -1,12 +1,12 @@
 import math
 import requests
-from datetime import datetime
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 FOOTBALL_DATA_API_KEY = "656e325174784b68a41717703ee0b58f"
 BOT_TOKEN = "8906894460:AAELYRJloheu02bcFaumNuGx6E9ngbgFDkU"
+BOT_USERNAME = "betxbet1_bot"
 ADMIN_ID = 6071687483
 CHANNEL_USERNAME = "@freebetvipi"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -14,6 +14,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 vip_users = set()
 referrals = {}
 user_inviter = {}
+user_states = {}
 
 def answer_callback(callback_query_id, text=None):
     payload = {"callback_query_id": callback_query_id}
@@ -25,7 +26,6 @@ def poisson(k, mean):
     return (math.pow(mean, k) * math.exp(-mean)) / math.factorial(k)
 
 def get_team_power(team_name):
-    """حساب قوة الفريق ديناميكياً لتفادي الأرقام الثابتة"""
     name = team_name.lower()
     top_tier = ["real madrid", "barcelona", "bayern", "manchester city", "arsenal", "inter", "psg", "liverpool", "juventus"]
     mid_tier = ["roma", "lazio", "villarreal", "betis", "newcastle", "leeds", "braga", "fiorentina"]
@@ -35,7 +35,6 @@ def get_team_power(team_name):
     elif any(m in name for m in mid_tier):
         return 1.60
     else:
-        # توليد قوة معتمدة على طول الاسم لتنويع النسبة لكل فريق
         return 1.15 + (len(team_name) % 5) * 0.12
 
 def calculate_full_analysis(home_team, away_team):
@@ -102,7 +101,6 @@ def check_channel_subscription(user_id):
     return False
 
 def get_official_today_matches():
-    """جلب المباريات القادمة اليوم فقط واستبعاد المنتهية"""
     url = "https://api.football-data.org/v4/matches"
     headers = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
     matches_list = []
@@ -113,7 +111,6 @@ def get_official_today_matches():
             matches = data.get("matches", [])
             for m in matches:
                 status = m.get("status")
-                # تصفية المباريات التي لم تبدأ بعد أو القادمة اليوم
                 if status in ["SCHEDULED", "TIMED"]:
                     competition = m.get("competition", {}).get("name", "مباراة رسمية")
                     h_name = m.get("homeTeam", {}).get("name", "Team Home")
@@ -132,7 +129,6 @@ def get_official_today_matches():
                         "time": time_str
                     })
             if not matches_list and matches:
-                # إذا كانت كل المباريات قد انتهت اليوم، جلب أول 6 مباريات للتحليل
                 for m in matches[:6]:
                     matches_list.append({
                         "league": m.get("competition", {}).get("name", "مباراة رسمية"),
@@ -204,7 +200,7 @@ def get_main_keyboard():
         "inline_keyboard": [
             [{"text": "📅 مباريات اليوم", "callback_data": "cmd_today"}, {"text": "⭐ اشتراك VIP (50 نجمة)", "callback_data": "cmd_vip"}],
             [{"text": "🎁 اشتراك VIP مجاني (رابط الدعوة)", "callback_data": "cmd_invite"}],
-            [{"text": "❓ طريقة الاستخدام", "callback_data": "cmd_help"}]
+            [{"text": "❓ طريقة الاستخدام", "callback_data": "cmd_help"}, {"text": "⚠️ الإبلاغ عن مشكلة", "callback_data": "cmd_report"}]
         ]
     }
 
@@ -243,6 +239,14 @@ def webhook():
                 return jsonify({"status": "success"}), 200
 
             is_vip = chat_id in vip_users or chat_id == ADMIN_ID
+
+            # استلام المشكلة إذا كان المستخدم في وضع الإبلاغ
+            if user_states.get(chat_id) == "waiting_report":
+                user_states[chat_id] = None
+                admin_msg = f"🚨 **بلاغ جديد عن مشكلة!**\n\n👤 **من المستخدم:** `{chat_id}`\n📝 **التفاصيل:**\n{text}"
+                send_telegram_message(ADMIN_ID, admin_msg)
+                send_telegram_message(chat_id, "✅ **تم إرسال بلاغك للإدارة بنجاح!**\nسنعمل على المتابعة والحل فوراً.", get_main_keyboard())
+                return jsonify({"status": "success"}), 200
 
             if text.startswith("/start"):
                 parts = text.split()
@@ -299,18 +303,14 @@ def webhook():
                     msg = "❌ **خطأ!** أرسل الأمر هكذا:\n`/delvip 12345678`"
                 send_telegram_message(chat_id, msg, get_admin_keyboard())
 
-                        elif text.startswith("/report"):
+            elif text.startswith("/report"):
                 report_text = text.replace("/report", "").strip()
                 if not report_text:
-                    send_telegram_message(chat_id, "⚠️ **طريقة الإبلاغ عن مشكلة:**\nأرسل الأمر متبوعاً بمشكلتك، مثال:\n`/report البوت لا يظهر المباريات`", get_main_keyboard())
+                    send_telegram_message(chat_id, "⚠️ **يرجى كتابة مشكلتك بعد الأمر مباشرة، مثل:**\n`/report البوت لا يعمل بشكل جيد`", get_main_keyboard())
                 else:
-                    # إرسال البلاغ للأدمن
-                    admin_msg = f"🚨 **بلاغ جديد عن مشكلة!**\n\n👤 **من المستخدم:** `{chat_id}`\n📝 **تفاصيل المشكلة:**\n{report_text}"
+                    admin_msg = f"🚨 **بلاغ جديد عن مشكلة!**\n\n👤 **من المستخدم:** `{chat_id}`\n📝 **التفاصيل:**\n{report_text}"
                     send_telegram_message(ADMIN_ID, admin_msg)
-                    
-                    # تأكيد للمستخدم
-                    send_telegram_message(chat_id, "✅ **تم إرسال بلاغك للإدارة بنجاح!**\nشكراً لك، سنعمل على حل المشكلة في أسرع وقت.", get_main_keyboard())
-                return jsonify({"status": "success"}), 200
+                    send_telegram_message(chat_id, "✅ **تم إرسال بلاغك للإدارة بنجاح!**", get_main_keyboard())
 
             elif text == "/today":
                 handle_today_matches(chat_id, is_vip=is_vip)
@@ -373,10 +373,13 @@ def webhook():
                 msg = (
                     f"🎁 **برنامج الدعوات - اشتراك VIP مجاني:**\n\n"
                     f"أنشر الرابط الخاص بك، وعند انضمام **10 أشخاص** سيتفعل معك حساب VIP لمدة شهر تلقائياً!\n\n"
-                    f"🔗 **رابطك الخاص:**\n`https://t.me/freebetvip_bot?start={chat_id}`\n\n"
+                    f"🔗 **رابطك الخاص:**\n`https://t.me/{BOT_USERNAME}?start={chat_id}`\n\n"
                     f"👥 **عدد من دعوتهم:** `{my_count}/10` شخص"
                 )
                 send_telegram_message(chat_id, msg, get_main_keyboard())
+            elif cb_data == "cmd_report":
+                user_states[chat_id] = "waiting_report"
+                send_telegram_message(chat_id, "✏️ **اكتب مشكلتك الآن في رسالة مفردة** وسنقوم باستلامها فوراً ومراجعتها!")
             elif cb_data == "cmd_help":
                 send_telegram_message(chat_id, "💡 اكتب اسم أي فريق بالإنجليزية (مثل Real Madrid أو Arsenal) للبحث عن مباراته الحقيقية وتحليلها فوراً!", get_main_keyboard())
         return jsonify({"status": "success"}), 200
