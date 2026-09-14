@@ -10,10 +10,15 @@ ADMIN_ID = 6071687483
 CHANNEL_USERNAME = "@freebetvipi"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# تخزين مؤقت داخل الذاكرة
 vip_users = set()
 referrals = {}
 user_inviter = {}
+
+def answer_callback(callback_query_id, text=None):
+    payload = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text
+    requests.post(f"{TELEGRAM_API}/answerCallbackQuery", json=payload)
 
 def poisson(k, mean):
     return (math.pow(mean, k) * math.exp(-mean)) / math.factorial(k)
@@ -46,10 +51,10 @@ def calculate_full_analysis(home_exp, away_exp):
     top_3_scores = [f"`{s[0]}` ({round(s[1]*100, 1)}%)" for s in scores[:3]]
 
     max_p = max(p_h, p_d, p_a)
-    pred = "🏠 فوز الأرض" if max_p == p_h else ("✈️ فوز الضيف" if max_p == p_a else "🤝 تعادل")
-    goals = "⚽ أكثر من 2.5 (Over)" if (home_exp + away_exp) >= 2.50 else "🔒 أقل من 2.5 (Under)"
-    btts = "✅ نعم (BTTS)" if (home_exp >= 1.05 and away_exp >= 1.05) else "❌ لا"
-    confidence = "🔥 عالية جداً" if max_p >= 52.0 else ("⚡ متوسطة" if max_p >= 42.0 else "⚠️ مخاطرة")
+    pred = "🏠 **فوز الأرض**" if max_p == p_h else ("✈️ **فوز الضيف**" if max_p == p_a else "🤝 **تعادل**")
+    goals = "⚽ **أكثر من 2.5 (Over)**" if (home_exp + away_exp) >= 2.50 else "🔒 **أقل من 2.5 (Under)**"
+    btts = "✅ **نعم (BTTS)**" if (home_exp >= 1.05 and away_exp >= 1.05) else "❌ **لا**"
+    confidence = "🔥 **عالية جداً**" if max_p >= 52.0 else ("⚡ **متوسطة**" if max_p >= 42.0 else "⚠️ **مخاطرة**")
 
     return {
         "p_h": p_h, "p_d": p_d, "p_a": p_a, "pred": pred,
@@ -121,13 +126,15 @@ def send_telegram_message(chat_id, text, reply_markup=None):
 
 def send_subscription_required(chat_id):
     msg = (
-        "⚠️ **عذراً، يجب عليك الاشتراك في القناة الرسمية أولاً لاستخدام البوت!**\n\n"
-        "اشترك في القناة ثم اضغط على **تحقق من الاشتراك** ✅"
+        "⚠️ **تنبيه: اشتراك إجباري بالقناة**\n\n"
+        "يرجى الاشتراك في القناة الرسمية لاستخدام خدمات البوت:\n"
+        "👉 @freebetvipi\n\n"
+        "بعد الاشتراك، اضغط على زر **تحقق من الاشتراك** بالأسفل 👇"
     )
     kb = {
         "inline_keyboard": [
-            [{"text": "📢 رابط القناة الرسمية", "url": "https://t.me/freebetvipi"}],
-            [{"text": "✅ تحقق من الاشتراك", "callback_data": "cmd_check_sub"}]
+            [{"text": "📢 الاشتراك في القناة", "url": "https://t.me/freebetvipi"}],
+            [{"text": "✅ تحقق من الاشتراك الآن", "callback_data": "cmd_check_sub"}]
         ]
     }
     send_telegram_message(chat_id, msg, kb)
@@ -135,11 +142,11 @@ def send_subscription_required(chat_id):
 def send_stars_invoice(chat_id):
     payload = {
         "chat_id": chat_id,
-        "title": "اشتراك VIP - بوت التوقعات",
-        "description": "احصل على جميع توقعات ومباريات اليوم كاملة بدون قيود لمدة شهر كامل!",
+        "title": "⭐ اشتراك VIP المميز",
+        "description": "فتح جميع مباريات اليوم وتوقعات دقيقة لمدة شهر كامل!",
         "payload": "vip_subscription_payload",
         "currency": "XTR",
-        "prices": [{"label": "اشتراك شهر VIP", "amount": 50}]
+        "prices": [{"label": "اشتراك VIP (شهر)", "amount": 50}]
     }
     requests.post(f"{TELEGRAM_API}/sendInvoice", json=payload)
 
@@ -153,6 +160,15 @@ def get_main_keyboard():
             [{"text": "📅 مباريات اليوم", "callback_data": "cmd_today"}, {"text": "⭐ اشتراك VIP (50 نجمة)", "callback_data": "cmd_vip"}],
             [{"text": "🎁 اشتراك VIP مجاني (رابط الدعوة)", "callback_data": "cmd_invite"}],
             [{"text": "❓ طريقة الاستخدام", "callback_data": "cmd_help"}]
+        ]
+    }
+
+def get_admin_keyboard():
+    return {
+        "inline_keyboard": [
+            [{"text": "📊 الإحصائيات الشاملة", "callback_data": "admin_stats"}, {"text": "➕ تفعيل VIP", "callback_data": "admin_addvip"}],
+            [{"text": "❌ إلغاء VIP", "callback_data": "admin_delvip"}, {"text": "📢 إذاعة للجميع", "callback_data": "admin_broadcast"}],
+            [{"text": "🗑️ إغلاق اللوحة", "callback_data": "admin_close"}]
         ]
     }
 
@@ -177,7 +193,6 @@ def webhook():
             chat_id = data["message"]["chat"]["id"]
             text = data["message"].get("text", "").strip()
 
-            # التحقق من الاشتراك بالقناة
             if not check_channel_subscription(chat_id) and chat_id != ADMIN_ID:
                 send_subscription_required(chat_id)
                 return jsonify({"status": "success"}), 200
@@ -194,94 +209,105 @@ def webhook():
                             user_inviter[chat_id] = inviter_id
                             referrals[inviter_id] = referrals.get(inviter_id, 0) + 1
                             count = referrals[inviter_id]
-                            send_telegram_message(inviter_id, f"🎉 **انضم شخص جديد عبر رابطك!**\nعددهم الحالي: `{count}/10` شخص.")
+                            send_telegram_message(inviter_id, f"🎉 **انضم شخص جديد عبر رابطك!**\nعدد دعواتك الحالي: `{count}/10` شخص.")
                             if count >= 10 and inviter_id not in vip_users:
                                 vip_users.add(inviter_id)
                                 send_telegram_message(inviter_id, "🥳 **مبروك! قمت بدعوة 10 أشخاص بنجاح.**\nتم تفعيل اشتراك **VIP** المجاني لمدة شهر!")
                     except ValueError:
                         pass
 
-                msg = "مرحباً بك في **بوت التوقعات الرياضية السحابي** ⚽\n\nاضغط الأزرار بالأسفل لتصفح الخدمات:"
+                msg = (
+                    "⚽ **مرحباً بك في بوت التوقعات الرياضية VIP** 🏆\n\n"
+                    "📌 *وجهتك الأولى لتحليلات كرة القدم الدقيقة باستخدام خوارزميات الاحتمالات.*"
+                    "\n\n─── ❖ ───\n\n"
+                    "🎯 **المميزات المتاحة:**\n"
+                    "• 📊 تحليلات رياضية لنسب الفوز والتعادل.\n"
+                    "• ⏱️ توقعات نتائج الشوط الأول والنتيجة الدقيقة.\n"
+                    "• ⚽ توقعات الأهداف (Over/Under) و (BTTS).\n\n"
+                    "👇 **اضغط على الأزرار بالأسفل لتصفح الخدمات:**"
+                )
                 send_telegram_message(chat_id, msg, get_main_keyboard())
 
-            elif text.startswith("/admin") and chat_id == ADMIN_ID:
-                admin_kb = {
-                    "inline_keyboard": [
-                        [{"text": "📊 الإحصائيات", "callback_data": "admin_stats"}, {"text": "➕ تفعيل VIP", "callback_data": "admin_addvip"}],
-                        [{"text": "❌ إلغاء VIP", "callback_data": "admin_delvip"}, {"text": "📢 إذاعة للكل", "callback_data": "admin_broadcast"}],
-                        [{"text": "🗑️ إغلاق اللوحة", "callback_data": "admin_close"}]
-                    ]
-                }
-                msg = "👑 **أهلاً بك في لوحة تحكم الأدمن الخاصة:**\n\nإليك أزرار التحكم السريعة:"
-                send_telegram_message(chat_id, msg, admin_kb)
-                return jsonify({"status": "success"}), 200
+            elif text.startswith("/admin"):
+                if chat_id == ADMIN_ID:
+                    msg = "👑 **لوحة تحكم الأدمن والمدير:**\n\nإليك أزرار التحكم والسيطرة السريعة بالأسفل:"
+                    send_telegram_message(chat_id, msg, get_admin_keyboard())
+                else:
+                    msg = "⚠️ هذه اللوحة مخصصة لمدير البوت فقط."
+                    send_telegram_message(chat_id, msg, get_main_keyboard())
+
             elif text.startswith("/addvip") and chat_id == ADMIN_ID:
                 try:
                     target_id = int(text.split()[1])
                     vip_users.add(target_id)
-                    msg = f"✅ تم تفعيل VIP للمستخدم: `{target_id}` بنجاح!"
+                    msg = f"✅ **تم تفعيل VIP للمستخدم:** `{target_id}` بنجاح!"
                 except:
-                    msg = "❌ خطأ! اكتب الأمر هكذا: `/addvip 12345678`"
-                send_telegram_message(chat_id, msg, get_main_keyboard())
+                    msg = "❌ **خطأ!** أرسل الأمر هكذا:\n`/addvip 12345678`"
+                send_telegram_message(chat_id, msg, get_admin_keyboard())
 
             elif text.startswith("/delvip") and chat_id == ADMIN_ID:
                 try:
                     target_id = int(text.split()[1])
                     vip_users.discard(target_id)
-                    msg = f"🗑️ تم إلغاء VIP عن المستخدم: `{target_id}`"
+                    msg = f"🗑️ **تم إلغاء VIP عن المستخدم:** `{target_id}`"
                 except:
-                    msg = "❌ خطأ! اكتب الأمر هكذا: `/delvip 12345678`"
-                send_telegram_message(chat_id, msg, get_main_keyboard())
+                    msg = "❌ **خطأ!** أرسل الأمر هكذا:\n`/delvip 12345678`"
+                send_telegram_message(chat_id, msg, get_admin_keyboard())
 
             elif text == "/today":
                 handle_today_matches(chat_id, is_vip=is_vip)
 
-            # للبحث عن المباريات: يمنع التحليل الوهمي إذا بدأت الرسالة بـ /
             elif text and not text.startswith("/"):
                 match_data = search_team_match(text)
                 if match_data:
                     res = calculate_full_analysis(match_data["h_exp"], match_data["a_exp"])
                     msg = (
-                        f"🔎 **تحليل مباراة رسمية:** [{match_data['league']}]\n"
+                        f"🏆 **[ {match_data['league']} ]**\n"
                         f"⚽ **{match_data['home']} 🆚 {match_data['away']}**\n\n"
-                        f"• 🏆 **النتيجة:** 🏠 {res['p_h']}% | 🤝 {res['p_d']}% | ✈️ {res['p_a']}%\n"
-                        f"• ⏱️ **الشوط الأول:** 🏠 {res['ht_h']}% | 🤝 {res['ht_d']}% | ✈️ {res['ht_a']}%\n"
-                        f"🎯 **النتائج الدقيقة:** {res['top_scores']}\n"
-                        f"📊 **الأهداف:** {res['goals']} | **BTTS:** {res['btts']}\n"
-                        f"🛡️ **الثقة:** {res['confidence']}"
+                        f"📈 **نسب الاحتمالات:**\n"
+                        f"🏠 فوز الأرض: `{res['p_h']}%` | 🤝 تعادل: `{res['p_d']}%` | ✈️ فوز الضيف: `{res['p_a']}%`"
+                        f"\n\n─── ❖ ───\n\n"
+                        f"🎯 **الترجيح الرئيسي:** {res['pred']}\n"
+                        f"⏱️ **الشوط الأول:** 🏠 `{res['ht_h']}%` | 🤝 `{res['ht_d']}%` | ✈️ `{res['ht_a']}%`\n"
+                        f"📊 **النتائج الدقيقة المتوقعة:** {res['top_scores']}\n"
+                        f"⚽ **توقع الأهداف:** {res['goals']}\n"
+                        f"🥅 **كلا الفريقين يسجل:** {res['btts']}\n"
+                        f"🛡️ **مستوى الثقة:** {res['confidence']}"
                     )
                 else:
-                    msg = f"❌ لم نجد مباراة حقيقية مجدولة اليوم أو قريباً للفريق: `{text}`.\nيرجى التأكد من كتابة الاسم الصحيح للفريق بالإنجليزية."
+                    msg = f"❌ لم نجد مباراة حقيقية مجدولة اليوم للفريق: **{text}**.\nيرجى التأكد من كتابة الاسم بالإنجليزية."
                 send_telegram_message(chat_id, msg, get_main_keyboard())
 
         elif "callback_query" in data:
             cb = data["callback_query"]
+            cb_id = cb.get("id")
+            answer_callback(cb_id)
             chat_id = cb["message"]["chat"]["id"]
             cb_data = cb.get("data")
 
             if cb_data == "cmd_check_sub":
                 if check_channel_subscription(chat_id) or chat_id == ADMIN_ID:
-                    send_telegram_message(chat_id, "✅ تم التحقق! مرحباً بك في البوت.", get_main_keyboard())
+                    send_telegram_message(chat_id, "✅ **تم التحقق بنجاح!** أهلاً بك في البوت.", get_main_keyboard())
                 else:
                     send_subscription_required(chat_id)
                 return jsonify({"status": "success"}), 200
 
             is_vip = chat_id in vip_users or chat_id == ADMIN_ID
 
-            
+            # أزرار لوحة الأدمن
             if cb_data == "admin_stats":
-                vip_cnt = len(vip_users)
-                ref_cnt = len(user_inviter)
-                msg = f"📊 **الإحصائيات الحالية:**\n\n• عدد المشتركين في VIP: `{vip_cnt}`\n• عدد المسجلين بالإحالة: `{ref_cnt}`"
-                send_telegram_message(chat_id, msg, get_main_keyboard())
+                msg = f"📊 **إحصائيات البوت الحالية:**\n\n• عدد مشتركي VIP: `{len(vip_users)}`\n• عدد المستخدمين المسجلين بالإحالة: `{len(user_inviter)}`"
+                send_telegram_message(chat_id, msg, get_admin_keyboard())
             elif cb_data == "admin_addvip":
-                send_telegram_message(chat_id, "➕ لتفعيل VIP لشخص، ارسل الأمر المباشر:\n`/addvip TELEGRAM_ID`")
+                send_telegram_message(chat_id, "➕ لتفعيل VIP لشخص، أرسل الأمر المباشر:\n`/addvip TELEGRAM_ID`", get_admin_keyboard())
             elif cb_data == "admin_delvip":
-                send_telegram_message(chat_id, "❌ لإلغاء VIP عن شخص، ارسل الأمر المباشر:\n`/delvip TELEGRAM_ID`")
+                send_telegram_message(chat_id, "❌ لإلغاء VIP عن شخص، أرسل الأمر المباشر:\n`/delvip TELEGRAM_ID`", get_admin_keyboard())
             elif cb_data == "admin_broadcast":
-                send_telegram_message(chat_id, "📢 للإذاعة لجميع المشتركين، اكتب الأمر:\n`/bc نص الرسالة`")
+                send_telegram_message(chat_id, "📢 للإذاعة لجميع المشتركين، أرسل الأمر:\n`/bc نص الرسالة`", get_admin_keyboard())
             elif cb_data == "admin_close":
-                send_telegram_message(chat_id, "تم إغلاق لوحة الأدمن 👍")
+                send_telegram_message(chat_id, "👍 تم إغلاق لوحة الأدمن.", get_main_keyboard())
+
+            # أزرار البوت الرئيسية
             elif cb_data == "cmd_today":
                 handle_today_matches(chat_id, is_vip=is_vip)
             elif cb_data == "cmd_vip":
@@ -289,14 +315,14 @@ def webhook():
             elif cb_data == "cmd_invite":
                 my_count = referrals.get(chat_id, 0)
                 msg = (
-                    f"🎁 **برنامج الدعوة للحصول على VIP مجاناً:**\n\n"
-                    f"قم بنشر الرابط الخاص بك، وعند انضمام **10 أشخاص** سيتفعل معك حساب VIP لمدة شهر تلقائياً!\n\n"
+                    f"🎁 **برنامج الدعوات - اشتراك VIP مجاني:**\n\n"
+                    f"أنشر الرابط الخاص بك، وعند انضمام **10 أشخاص** سيتفعل معك حساب VIP لمدة شهر تلقائياً!\n\n"
                     f"🔗 **رابطك الخاص:**\n`https://t.me/bot8906894460_bot?start={chat_id}`\n\n"
-                    f"👥 **عدد الذين دعوتهم:** `{my_count}/10` شخص"
+                    f"👥 **عدد من دعوتهم:** `{my_count}/10` شخص"
                 )
                 send_telegram_message(chat_id, msg, get_main_keyboard())
             elif cb_data == "cmd_help":
-                send_telegram_message(chat_id, "💡 اكتب اسم أي فريق بالإنجليزية (مثل Real Madrid أو Arsenal) للبحث عن مباراته الحقيقية وتحليلها!")
+                send_telegram_message(chat_id, "💡 اكتب اسم أي فريق بالإنجليزية (مثل Real Madrid أو Arsenal) للبحث عن مباراته الحقيقية وتحليلها فوراً!", get_main_keyboard())
         return jsonify({"status": "success"}), 200
     return "Bot is running on Vercel Serverless!", 200
 
@@ -311,13 +337,14 @@ def handle_today_matches(chat_id, is_vip=False):
     for idx, m in enumerate(matches[:limit], 1):
         res = calculate_full_analysis(m["h_exp"], m["a_exp"])
         response += (
-            f"**{idx}️⃣ [{m['league']}]**\n"
+            f"**{idx}️⃣ [ {m['league']} ]**\n"
             f"⚽ **{m['home']} 🆚 {m['away']}**\n"
-            f"• 🏆 **الاحتمالات:** 🏠 {res['p_h']}% | 🤝 {res['p_d']}% | ✈️ {res['p_a']}%\n"
-            f"🎯 **الترجيح:** {res['pred']}\n------------------------------\n"
+            f"📈 **الاحتمالات:** 🏠 `{res['p_h']}%` | 🤝 `{res['p_d']}%` | ✈️ `{res['p_a']}%`\n"
+            f"🎯 **الترجيح:** {res['pred']}\n"
+            f"─── ❖ ───\n"
         )
     if not is_vip and len(matches) > 3:
-        response += "\n🔒 باقي المباريات مغلقة! اشترك في VIP أو ادعُ 10 أصدقاء لفتحها مجاناً."
+        response += "\n🔒 **باقي المباريات مغلقة!** اشترك في VIP بـ 50 نجمة أو ادعُ 10 أصدقاء لفتحها مجاناً."
     send_telegram_message(chat_id, response, get_main_keyboard())
 
 if __name__ == "__main__":
