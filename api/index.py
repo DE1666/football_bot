@@ -373,7 +373,7 @@ def webhook():
                 msg = (
                     f"🎁 **برنامج الدعوات - اشتراك VIP مجاني:**\n\n"
                     f"أنشر الرابط الخاص بك، وعند انضمام **10 أشخاص** سيتفعل معك حساب VIP لمدة شهر تلقائياً!\n\n"
-                    f"🔗 **رابطك الخاص:**\n`https://t.me/bot8906894460_bot?start={chat_id}`\n\n"
+                    f"🔗 **رابطك الخاص:**\n`https://t.me/freebetvip_bot?start={chat_id}`\n\n"
                     f"👥 **عدد من دعوتهم:** `{my_count}/10` شخص"
                 )
                 send_telegram_message(chat_id, msg, get_main_keyboard())
