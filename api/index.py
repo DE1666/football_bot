@@ -10,6 +10,9 @@ BOT_TOKEN = "8906894460:AAELYRJloheu02bcFaumNuGx6E9ngbgFDkU"
 ADMIN_ID = 6071687483
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# قائمة المستخدمين المشتركين في VIP (في الذاكرة)
+vip_users = set()
+
 def poisson(k, mean):
     return (math.pow(mean, k) * math.exp(-mean)) / math.factorial(k)
 
@@ -90,10 +93,28 @@ def send_telegram_message(chat_id, text, reply_markup=None):
         payload["reply_markup"] = reply_markup
     requests.post(f"{TELEGRAM_API}/sendMessage", json=payload)
 
+def send_stars_invoice(chat_id):
+    payload = {
+        "chat_id": chat_id,
+        "title": "اشتراك VIP - بوت التوقعات",
+        "description": "احصل على جميع توقعات ومباريات اليوم كاملة بدون قيود لمدة شهر كامل!",
+        "payload": "vip_subscription_payload",
+        "currency": "XTR",  # رمز نجوم تلغرام
+        "prices": [{"label": "اشتراك شهر VIP", "amount": 50}] # 50 نجمة
+    }
+    requests.post(f"{TELEGRAM_API}/sendInvoice", json=payload)
+
+def answer_pre_checkout_query(pre_checkout_query_id):
+    payload = {
+        "pre_checkout_query_id": pre_checkout_query_id,
+        "ok": True
+    }
+    requests.post(f"{TELEGRAM_API}/answerPreCheckoutQuery", json=payload)
+
 def get_main_keyboard():
     return {
         "inline_keyboard": [
-            [{"text": "📅 مباريات اليوم", "callback_data": "cmd_today"}, {"text": "⭐ اشتراك VIP", "callback_data": "cmd_vip"}],
+            [{"text": "📅 مباريات اليوم", "callback_data": "cmd_today"}, {"text": "⭐ اشتراك VIP (50 نجمة)", "callback_data": "cmd_vip"}],
             [{"text": "❓ طريقة الاستخدام", "callback_data": "cmd_help"}]
         ]
     }
@@ -102,14 +123,31 @@ def get_main_keyboard():
 def webhook():
     if request.method == "POST":
         data = request.get_json()
+
+        # التعامل مع تأكيد الشراء قبل الدفع (PreCheckoutQuery)
+        if "pre_checkout_query" in data:
+            query_id = data["pre_checkout_query"]["id"]
+            answer_pre_checkout_query(query_id)
+            return jsonify({"status": "success"}), 200
+
+        # التعامل مع الدفع الناجح (Successful Payment)
+        if "message" in data and "successful_payment" in data["message"]:
+            chat_id = data["message"]["chat"]["id"]
+            vip_users.add(chat_id)
+            msg = "🎉 **تمت عملية الشراء بنجاح!**\n\nأصبحت الآن مشتركاً في **VIP** ⭐ ويمكنك رؤية كامل مباريات اليوم بدون قيود!"
+            send_telegram_message(chat_id, msg, get_main_keyboard())
+            return jsonify({"status": "success"}), 200
+
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
             text = data["message"].get("text", "").strip()
+            is_vip = chat_id in vip_users or chat_id == ADMIN_ID
+
             if text == "/start":
                 msg = "مرحباً بك في **بوت التوقعات الرياضية السحابي** ⚽\n\nاضغط الأزرار بالأسفل لتصفح الخدمات:"
                 send_telegram_message(chat_id, msg, get_main_keyboard())
             elif text == "/today":
-                handle_today_matches(chat_id, is_vip=False)
+                handle_today_matches(chat_id, is_vip=is_vip)
             elif text:
                 h_exp = get_dynamic_exp(text) * 1.15
                 res = calculate_full_analysis(h_exp, 1.25)
@@ -127,10 +165,12 @@ def webhook():
             cb = data["callback_query"]
             chat_id = cb["message"]["chat"]["id"]
             cb_data = cb.get("data")
+            is_vip = chat_id in vip_users or chat_id == ADMIN_ID
+
             if cb_data == "cmd_today":
-                handle_today_matches(chat_id, is_vip=False)
+                handle_today_matches(chat_id, is_vip=is_vip)
             elif cb_data == "cmd_vip":
-                send_telegram_message(chat_id, "⭐ للاشتراك في VIP يرجى التواصل مع الإدارة.")
+                send_stars_invoice(chat_id)
             elif cb_data == "cmd_help":
                 send_telegram_message(chat_id, "💡 اكتب اسم أي فريق مباشرة لتحليله فوراً!")
         return jsonify({"status": "success"}), 200
@@ -142,7 +182,8 @@ def handle_today_matches(chat_id, is_vip=False):
         send_telegram_message(chat_id, "ℹ️ لا توجد مباريات مسجلة اليوم.")
         return
     limit = len(matches) if is_vip else 3
-    response = "FREE **تقرير مجاني (أول 3 مباريات فقط):**\n\n"
+    header = "⭐ **تقرير VIP (جميع المباريات مفتوحة):**\n\n" if is_vip else "FREE **تقرير مجاني (أول 3 مباريات فقط):**\n\n"
+    response = header
     for idx, m in enumerate(matches[:limit], 1):
         res = calculate_full_analysis(m["h_exp"], m["a_exp"])
         response += (
@@ -152,7 +193,7 @@ def handle_today_matches(chat_id, is_vip=False):
             f"🎯 **الترجيح:** {res['pred']}\n------------------------------\n"
         )
     if not is_vip and len(matches) > 3:
-        response += "\n🔒 هناك مباريات أخرى مغلقة!"
+        response += "\n🔒 باقي المباريات مغلقة! اشترك في VIP بـ 50 نجمة لفتح جميع المباريات."
     send_telegram_message(chat_id, response, get_main_keyboard())
 
 if __name__ == "__main__":
