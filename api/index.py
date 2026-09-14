@@ -268,7 +268,21 @@ def webhook():
 
             is_vip = chat_id in vip_users or chat_id == ADMIN_ID
 
-            if cb_data == "cmd_today":
+            
+            if cb_data == "admin_stats":
+                vip_cnt = len(vip_users)
+                ref_cnt = len(user_inviter)
+                msg = f"📊 **الإحصائيات الحالية:**\n\n• عدد المشتركين في VIP: `{vip_cnt}`\n• عدد المسجلين بالإحالة: `{ref_cnt}`"
+                send_telegram_message(chat_id, msg, get_main_keyboard())
+            elif cb_data == "admin_addvip":
+                send_telegram_message(chat_id, "➕ لتفعيل VIP لشخص، ارسل الأمر المباشر:\n`/addvip TELEGRAM_ID`")
+            elif cb_data == "admin_delvip":
+                send_telegram_message(chat_id, "❌ لإلغاء VIP عن شخص، ارسل الأمر المباشر:\n`/delvip TELEGRAM_ID`")
+            elif cb_data == "admin_broadcast":
+                send_telegram_message(chat_id, "📢 للإذاعة لجميع المشتركين، اكتب الأمر:\n`/bc نص الرسالة`")
+            elif cb_data == "admin_close":
+                send_telegram_message(chat_id, "تم إغلاق لوحة الأدمن 👍")
+            elif cb_data == "cmd_today":
                 handle_today_matches(chat_id, is_vip=is_vip)
             elif cb_data == "cmd_vip":
                 send_stars_invoice(chat_id)
